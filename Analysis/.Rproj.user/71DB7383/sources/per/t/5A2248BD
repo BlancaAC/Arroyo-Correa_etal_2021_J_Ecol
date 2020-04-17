@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1587118027417.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "4173456673",
+    "id" : "5A2248BD",
+    "lastKnownWriteTime" : 1587118360,
+    "last_content_update" : 1587118360128,
+    "path" : "~/Desktop/MS_Arroyo-Correa_2020/Analysis/FRS-analysis.Rmd",
+    "project_path" : "FRS-analysis.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console",
+        "cursorPosition" : "153,0",
+        "scrollLine" : "157"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

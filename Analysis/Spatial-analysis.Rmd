@@ -1,0 +1,269 @@
+---
+title: "Spatial-analysis"
+author: "Blanca Arroyo-Correa"
+date: "8/8/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Packages
+
+```{r pack}
+
+library(tidyr)
+library(raster)
+library(sf) 
+library(mapview)
+library(ggplot2)
+library(dplyr)
+library(leaflet)
+
+```
+
+
+# Read and visualize data
+
+```{r spatial}
+
+plants <-st_read('../Database/Spatial_data/plantas.shp')
+plot(plants)
+str(plants)
+
+mapview(plants)
+
+leaflet(data = plants) %>% addProviderTiles("OpenStreetMap.BlackAndWhite") %>%
+      addPolygons()
+
+
+#ortho <- raster("../Database/Spatial_data/orthophoto.tif")
+#plot(ortho)
+
+plants$Area <- st_area(plants)
+
+species <- read.csv("../Database/Spatial_data/species_atrr.csv", sep=";")
+plants <- merge(plants, species, by="ATRIBUT")
+
+ind <- read.csv("../Database/individual_data_halimium_20190714.csv", sep=";")
+
+## Plot all the individual plants (all species) in a map 
+library(pals)
+ggplot() +geom_sf(plants, mapping=aes(fill=Species), lwd=0) + theme_bw()+
+  scale_fill_manual(values=as.vector(stepped(22))) + 
+  theme(axis.text.x = element_text(size = 17), axis.text.y = element_text(size = 17), 
+        #legend.title = element_text(size = 15), legend.text = element_text(size = 15), 
+        legend.position = "none")
+
+
+colours <- c("slateblue3", "yellowgreen", "grey70", "red3", "orange2", "#4E9C7B", "grey40", "lightsalmon1", "orchid4", "darkslategray3", 
+             "indianred2", "goldenrod3", "darkseagreen3", "gold", "bisque3")
+ggplot() +geom_sf(plants, mapping=aes(fill=Species), lwd=0) + theme_bw()+
+  scale_fill_manual(values = colours) + 
+  theme(axis.text.x = element_text(size = 18), axis.text.y = element_text(size = 18),
+        legend.title = element_text(size = 18), legend.text = element_text(size = 18), legend.key.size = unit(1.0, "cm")) 
+        #legend.position = "none")
+
+
+## Plot only surveyed H. halimifolium individual plants in a map
+x <- plants %>% filter(ATRIBUT %in% ind$Plant_ID)
+saplings <- plants %>% filter(Species == "Hal_hal_young")
+
+devtools::install_github("yutannihilation/ggsflabel")
+library(ggsflabel)
+
+ggplot(x) +geom_sf(mapping=aes(fill=Species), lwd=0, fill="#4E9C7B") + theme_bw()  + 
+  theme(axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12), axis.title.x=element_blank(), axis.title.y=element_blank(), 
+        #legend.title = element_text(size = 15), legend.text = element_text(size = 15), 
+        legend.position = "none") #+ geom_sf_text_repel(aes(label = ATRIBUT), colour = "black", size=3.5) 
+
+
+```
+
+# Buffers to calculate cover of inter/intraspecific neighbours
+
+```{r buffers}
+
+# x <- plants %>% dplyr::select(ATRIBUT, Species, Area)
+
+buff_05 <- st_buffer(plants, 0.5)
+clipped_05 <- st_intersection(plants, buff_05)
+
+buff_1 <- st_buffer(plants, 1)
+clipped_1 <- st_intersection(plants, buff_1)
+
+buff_2 <- st_buffer(plants, 2)
+clipped_2 <- st_intersection(plants, buff_2)
+
+buff_3 <- st_buffer(plants, 3)
+clipped_3 <- st_intersection(plants, buff_3)
+
+
+## Computing neighbours cover buffer 50 cm
+
+neig_05 <- subset(clipped_05, ATRIBUT %in% ind$Plant_ID) 
+#names(species)[1] <- "ATRIBUT.1"
+#neig_05 <- merge(neig_05, species, by="ATRIBUT.1") ## ATRIBUT.1 is the neighbour and ATRIBUT is the focal individual, Species.y and area are the neighbour species and its area 
+neig_05 <- neig_05[, c(1, 5, 6)]
+neig_05 <- aggregate(Area.1 ~ ATRIBUT + Species.1, neig_05, sum) # aggregate data by species
+
+neig_05_wide <- spread(neig_05, Species.1, Area.1) # to wide format
+neig_05_wide[is.na(neig_05_wide)] <- 0
+
+neig_05_wide$intra_05 <- neig_05_wide$Hal_hal + neig_05_wide$Hal_hal_young
+neig_05_wide$inter_05 <- neig_05_wide$Cis_lib + neig_05_wide$Cyt_gran + neig_05_wide$Hal_com + neig_05_wide$Lav_sto + 
+  neig_05_wide$Pin_pin + neig_05_wide$Que_sub + neig_05_wide$Ulex_sp + neig_05_wide$Ulex_sp
+
+
+## Computing neighbours cover buffer 1 m
+
+neig_1 <- subset(clipped_1, ATRIBUT %in% ind$Plant_ID) 
+
+neig_1 <- neig_1[, c(1, 5, 6)]
+neig_1 <- aggregate(Area.1 ~ ATRIBUT + Species.1, neig_1, sum) 
+
+neig_1_wide <- spread(neig_1, Species.1, Area.1)
+neig_1_wide[is.na(neig_1_wide)] <- 0
+
+neig_1_wide$intra_1 <- neig_1_wide$Hal_hal + neig_1_wide$Hal_hal_young
+neig_1_wide$inter_1 <- neig_1_wide$Cis_lib + neig_1_wide$Cyt_gran + neig_1_wide$Hal_com + neig_1_wide$Lav_sto + 
+  neig_1_wide$Pin_pin + neig_1_wide$Que_sub + neig_1_wide$Ulex_sp + neig_1_wide$Ulex_sp + neig_1_wide$Dia_ino
+
+
+## Computing neighbours cover buffer 2 m
+
+neig_2 <- subset(clipped_2, ATRIBUT %in% ind$Plant_ID) 
+
+neig_2 <- neig_2[, c(1, 5, 6)]
+neig_2 <- aggregate(Area.1 ~ ATRIBUT + Species.1, neig_2, sum) 
+
+neig_2_wide <- spread(neig_2, Species.1, Area.1)
+neig_2_wide[is.na(neig_2_wide)] <- 0
+
+neig_2_wide$intra_2 <- neig_2_wide$Hal_hal + neig_2_wide$Hal_hal_young
+neig_2_wide$inter_2 <- neig_2_wide$Cis_lib + neig_2_wide$Cyt_gran + neig_2_wide$Hal_com + neig_2_wide$Lav_sto + 
+  neig_2_wide$Pin_pin + neig_2_wide$Que_sub + neig_2_wide$Ulex_sp + neig_2_wide$Ulex_sp + neig_2_wide$Dia_ino + neig_2_wide$Sal_alb
+
+
+## Computing neighbours cover buffer 3 m
+
+neig_3 <- subset(clipped_3, ATRIBUT %in% ind$Plant_ID) 
+
+neig_3 <- neig_3[, c(1, 5, 6)]
+neig_3 <- aggregate(Area.1 ~ ATRIBUT + Species.1, neig_3, sum) 
+
+neig_3_wide <- spread(neig_3, Species.1, Area.1)
+neig_3_wide[is.na(neig_3_wide)] <- 0
+
+
+neig_3_wide$intra_3 <- neig_3_wide$Hal_hal + neig_3_wide$Hal_hal_young
+neig_3_wide$inter_3 <- neig_3_wide$Cis_lib + neig_3_wide$Cyt_gran + neig_3_wide$Hal_com + neig_3_wide$Lav_sto + 
+  neig_3_wide$Pin_pin + neig_3_wide$Que_sub + neig_3_wide$Ulex_sp + neig_3_wide$Ulex_sp + neig_3_wide$Dia_ino + neig_3_wide$Sal_alb + neig_3_wide$Thy_mas
+
+
+### Merge all neigbourhood data
+
+neighbors <- merge(neig_05_wide[, c(1, 11, 12)], neig_1_wide[, c(1, 12, 13)], by="ATRIBUT")
+neighbors <- merge(neighbors, neig_2_wide[, c(1, 13, 14)], by="ATRIBUT") 
+neighbors <- merge(neighbors, neig_3_wide[, c(1, 14, 15)], by="ATRIBUT") 
+
+clip <- pipe("pbcopy", "w")                       
+write.table(neighbors, file=clip, sep = '\t', row.names = FALSE)                               
+close(clip)
+
+```
+
+
+# Distance to the stream
+
+```{r stream}
+
+stream <- data.frame(Latitude=c(37.130992, 37.130757, 37.130666, 37.130516), Longitude=c(-6.526524, -6.527008, -6.527316, -6.527718))
+
+str(stream)
+
+stream_sf <- stream %>%
+  st_as_sf(coords = c("Longitude", "Latitude"))
+
+plot(stream_sf)
+
+line.sf <- st_sf(id = 'L1', st_sfc(st_linestring(as.matrix(stream), dim = "XY")))
+st_crs(line.sf) <- st_crs(m.plants) # assign crs
+line.sf <- st_transform(line.sf, crs = "+proj=utm +zone=29 +datum=WGS84 +units=m +no_defs") # transform to the same Coordinate Reference System as m.plants
+
+
+m.plants <- plants %>% filter(ATRIBUT %in% ind$Plant_ID) %>%   # select only surveyed H. halimifolium plants
+  st_centroid()
+
+
+dist_stream <- st_distance(x= m.plants, y=line.sf)
+
+m.plants <- cbind(m.plants, dist_stream)  # assign new information to database
+
+
+#m.plants <- m.plants %>% st_cast("POINT")
+
+
+```
+
+
+# Distance to nearest tree
+
+```{r tree}
+
+trees <- plants %>% filter(ATRIBUT %in% c("pin_pin_5", "que_sub_1", "que_sub_6", "que_sub_7", "sal_alb_1"))  # select trees (species)
+
+m.plants <- plants %>% filter(ATRIBUT %in% ind$Plant_ID)
+
+dist_trees <- st_distance(x= m.plants, y=trees)
+
+dist_trees <- cbind(dist_trees, m.plants)
+str(dist_trees)
+
+names(dist_trees)[1:5] <- as.vector(trees$ATRIBUT)
+
+
+tree.id <- colnames(dist_trees[, 1:5])[apply(dist_trees[, 1:5],1,which.min)]  # which is the nearest tree
+
+dist_trees_min <- dplyr::select(as.data.frame(dist_trees), 1:5) 
+tree.dist <- apply(dist_trees_min, 1, FUN=min) # distance to the nearest tree
+
+cbind(tree.id, tree.dist, as.vector(m.plants$ATRIBUT))
+
+```
+
+
+# Distance to the habitat edge
+
+```{r edge}
+
+edge <- data.frame(Latitude=c(37.131464,37.131144, 37.131006, 37.131283, 37.131208, 37.130889, 37.130856, 37.131167, 37.131153, 37.130697, 37.130782, 37.130860, 37.130920, 37.131119, 37.131021, 37.130892, 37.130935), Longitude=c(-6.528193, -6.527664, -6.527956, -6.528616, -6.528744, -6.528187, -6.528256, -6.528851, -6.528901, -6.528028, -6.527964, -6.528101, -6.528003, -6.527578, -6.527376, -6.527889, -6.527983))
+
+str(edge)
+
+edge_sf <- edge %>%
+  st_as_sf(coords = c("Longitude", "Latitude"))
+
+plot(stream_sf)
+
+edge.sf <- st_sf(id = 'L1', st_sfc(st_linestring(as.matrix(edge), dim = "XY")))
+st_crs(edge.sf) <- st_crs(m.plants) # assign crs
+edge.sf <- st_transform(edge.sf, crs = "+proj=utm +zone=29 +datum=WGS84 +units=m +no_defs") # transform to the same Coordinate Reference System as m.plants
+
+plot(edge.sf)
+
+m.plants <- plants %>% filter(ATRIBUT %in% ind$Plant_ID) %>% 
+  st_centroid()
+
+
+dist_edge <- st_distance(x= m.plants, y=edge.sf)
+
+m.plants <- cbind(m.plants, dist_edge)
+
+
+
+```
+

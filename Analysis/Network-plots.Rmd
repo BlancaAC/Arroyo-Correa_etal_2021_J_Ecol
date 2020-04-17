@@ -1,0 +1,347 @@
+---
+title: "Network-plots"
+author: "Blanca Arroyo-Correa"
+date: "8/8/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+chooseCRANmirror(graphics=FALSE, ind=1)
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r packages, include = FALSE}
+
+library(ggplot2)
+library(network)
+library(reshape2)
+library(textshape)
+
+library(ggnet)
+library(ergm)
+library(intergraph)
+library(RColorBrewer)
+
+library(GGally)
+library(network)
+library(sna)
+
+library(dplyr)
+library(bipartite)
+library(gridGraphics)
+library(magrittr)
+
+library(igraph)
+library(wesanderson)
+
+library(ggbipart)
+
+library(vegan)
+library(plyr)
+
+```
+
+# Import interaction data 
+
+I used the complete dataset with interactions recorded in La Rocina population for 60 individual plants.
+
+```{r read, echo=FALSE}
+
+rocina <- read.table("../Database/rocina_halimium_09072019.csv", sep=";", header=T)
+head(rocina)
+str(rocina)
+rocina$N_visitations <- as.numeric(rocina$N_visitations)
+rocina.fg <- rocina[,c(5,7,8)]
+rocina.sp <- rocina[,c(5,6,8)]
+
+```
+
+Next step: creating the interaction matrix, in this case with interactions between individual plants and pollinator functional groups; and including plant traits and fitness
+
+```{r clean, echo=FALSE}
+
+rocina.m <- dcast(rocina.fg, Plant_ID ~ Pollinator_fg, value.var="N_visitations", fun.aggregate = sum)
+
+#rocina.m[is.na(rocina.m)] <- 0
+
+#plotweb(rocina.m)
+#visweb(rocina.m, type="nested")
+
+data <- read.table("../Database/individual_data_halimium_20190714.csv", sep=";", header=T)
+data <- merge(rocina.m, data, by="Plant_ID")
+
+ind <- data %>%  
+           dplyr::select(c(1, 13:32, 36:39))
+
+ind$Fitness <- ind$Sum_flower_number * ind$Fruit_set * ind$Seed_set
+
+norm <- (ind$Seed_mass - min(ind$Seed_mass)) / (max(ind$Seed_mass) - min(ind$Seed_mass))
+ind$Fitness_w <- ind$Sum_flower_number * ind$Fruit_set * ind$Seed_set * norm
+
+
+# matrix individual plants - pollinator functional groups
+rocina.m <- rocina.m %>% column_to_rownames("Plant_ID")
+rocina.m$nothing <- NULL
+rocina.m$Butterfly <- NULL
+
+## matrix individual plants - pollinator species 
+rocina.m.sp <- dcast(rocina.sp, Plant_ID ~ Pollinator_sp, value.var="N_visitations", fun.aggregate = sum)
+rocina.m.sp <- rocina.m.sp %>% column_to_rownames("Plant_ID")
+rocina.m.sp$nothing <- NULL
+rocina.m.sp$Butterfly <- NULL
+
+sum(rocina.m)
+dim(rocina.m)
+
+```
+
+# Visualization (bipartite network)
+
+Here I construct a bipartite weighted individual-based network (interactions between individual plants and functional groups of pollinators), using ggnet.
+
+```{r vis.bipartite}
+
+rocina.m1 = network(rocina.m,
+              matrix.type = "bipartite",
+              ignore.eval = FALSE,
+              names.eval = "weights")
+
+# set colors for each mode
+col = c("actor" = "#599B78", "event" = "tan1")
+
+network.vertex.names(rocina.m1)[61:68] <- c("Bf", "Hf", "Lbee", "Lbeet", "Mbee", "Mbeet", "Sbee", "Sbeet")
+network.vertex.names(rocina.m1)
+
+# add individual data
+
+ind %>% dplyr::select(c(1, 27))  # same order as vertices
+x = scale(c(ind[1:60 , 27]))  # scaled (z-scores)
+x = x[1:60, ]  # fitness values
+x= x+3
+x[x == max(x)] <- max(x[x != max(x)])
+
+y <- c(rep(max(x), 8)) # add constant number for the size of the pollinator nodes
+
+xy <- c(x, y)
+
+rocina.m1 %v% "fitness" = xy
+set.vertex.attribute(rocina.m1, # the name of the network object
+                     "fitness", # the name we want to reference the variable by in that object
+                     xy # the value we are giving that variable
+                     ) 
+network::get.vertex.attribute(rocina.m1, "fitness")
+
+
+## ggbipart
+
+hal.net<- bip_ggnet(rocina.m1, as.matrix(rocina.m),
+                size= 0,
+                shape= "mode", 
+                palette= col,
+                color= "mode",
+                layout.exp = 0.2) +
+  geom_point(aes(color= color), size=(network::get.vertex.attribute(rocina.m1, "fitness"))*3+0.8, color="white") +
+  #geom_point(aes(color= color), size= 7, alpha= 0.5) +
+  geom_point(aes(color= color), size= network::get.vertex.attribute(rocina.m1, "fitness")*3) +
+          geom_text(aes(label= network.vertex.names(rocina.m1)), 
+                    color= "white", fontface = "bold", size= 3) + # check_overlap= TRUE
+  guides(color= FALSE) + 
+  #geom_text(aes(label= network.vertex.names(rocina.m1)),color= "black", size= 3) + 
+  theme(legend.position="none")          # Hide legend
+hal.net
+
+
+
+####### igraph with pollinator functional groups
+
+bipartite <- graph_from_incidence_matrix(rocina.m, weighted = TRUE, directed = FALSE)
+
+V(bipartite)$size <- 10
+V(bipartite)$color <- ifelse(V(bipartite)$type, "orange", "#4E9C7B")
+V(bipartite)$shape <- ifelse(V(bipartite)$type, "square", "circle")
+E(bipartite)$width <- E(bipartite)$weight/5
+
+V(bipartite)$name <- c(rep(NA, 60), "Bf", "Hf", "Lbee", "Lbeet", "Mbee", "Mbeet", "Sbee", "Sbeet")
+
+plot(bipartite, vertex.label=NA, vertex.frame.color="white", edge.color=adjustcolor("grey70", alpha.f = .7), layout=layout_with_graphopt)
+
+
+l <- layout.graphopt(bipartite)
+l <- layout.norm(l, ymin=-1, ymax=1, xmin=-1, xmax=1)
+plot(bipartite, vertex.label.color="white", vertex.label.cex=0.7, vertex.label.font=2,
+    vertex.label.family="Helvetica", vertex.frame.color="white", edge.color=adjustcolor("grey70", alpha.f = .8), layout=l*1.2, rescale=F)
+
+legend(x = -0.5,      
+       legend = c("Individual plant", "Pollinator functional group"),
+       pch = c(19, 15), pt.cex=3.5, cex=1.6,            
+       col = c("cadetblue4", "orange"),
+       bty = "n")
+
+
+
+
+####### with pollinator species
+
+bipartite.sp <- graph_from_incidence_matrix(rocina.m.sp, weighted = TRUE, directed = FALSE)
+
+V(bipartite.sp)$size <- 10
+V(bipartite.sp)$color <- ifelse(V(bipartite.sp)$type, "orange", "#4E9C7B")
+V(bipartite.sp)$shape <- ifelse(V(bipartite.sp)$type, "square", "circle")
+E(bipartite.sp)$width <- E(bipartite.sp)$weight/5
+
+
+plot(bipartite.sp, vertex.label=NA, vertex.frame.color="white", edge.color=adjustcolor("grey70", alpha.f = .7), layout=layout_with_graphopt)
+
+
+plot(bipartite.sp, vertex.label=NA, vertex.frame.color="white", edge.color=adjustcolor("grey70", alpha.f = .7), layout=layout_as_bipartite)
+
+l <- layout.graphopt(bipartite.sp)
+l <- layout.norm(l, ymin=-1, ymax=1, xmin=-1, xmax=1)
+plot(bipartite.sp, vertex.label.color="grey", vertex.label.cex=0.7, vertex.label.font=2,
+    vertex.label.family="Helvetica", vertex.frame.color="white", edge.color=adjustcolor("grey70", alpha.f = .8), layout=l*1.2, rescale=F)
+
+legend(x = -0.5,      
+       legend = c("Individual plant", "Pollinator functional group"),
+       pch = c(19, 15), pt.cex=3.5, cex=1.6,            
+       col = c("#4E9C7B", "orange"),
+       bty = "n")
+
+
+
+
+```
+
+# Visualization (spatial unipartite network)
+
+Unipartite network visualization, where nodes (individual plants) are connected if they share pollinator functional groups visiting their flowers. The position of the nodes in the graph represents the real spatial location (I include in the analysis a two-column database in the layout argument - plot function).
+
+```{r vis.unipartite}
+
+###### coordinates layout
+
+unipartite <- as.one.mode(rocina.m, project="lower") # unipartite projection
+unipartite <- graph.adjacency(unipartite, mode = "undirected", weighted = TRUE, diag = FALSE) # igraph object
+
+E(unipartite)$weight #order
+V(unipartite)
+#plot(unipartite)
+
+
+# add individual data
+
+ind %>% dplyr::select(c(1, 27))  # same order as vertices
+
+
+#x <- (ind$Fitness_w - min(ind$Fitness_w)) / (max(ind$Fitness_w) - min(ind$Fitness_w)) # normalized
+
+x = scale(c(ind[1:60 , 27]))  # scaled (z-scores)
+x = x[1:60, ]
+x = x + 3
+
+x[x == max(x)] <- max(x[x != max(x)])
+
+## add spatial data
+
+spatial <- read.table("../Database/2019_05_24_algaida_bartomeus-completev2.csv", sep=";", header=T)
+
+spatial <- subset(spatial, Name %in% vertex_attr(unipartite, "name")) # only spatial info of vertices with interactions
+spatial <- spatial[order(spatial$Name),] # needs the same order as vertices
+
+sort(spatial$Name)
+sort(V(unipartite)) # check that both vectors have the same length and names
+
+
+# Node and edge attributes
+
+V(unipartite)$size <- 8
+V(unipartite)$frame.color <- adjustcolor("#599B78", .5)
+V(unipartite)$color <- "#599B78"
+
+
+E(unipartite)$arrow.mode <- 0
+E(unipartite)$width <- E(unipartite)$weight/10
+
+# Plot
+
+plot(unipartite, layout=layout_in_circle, vertex.label=NA)
+coord.norm <- layout.norm(as.matrix(spatial[,3:4]))
+plot(unipartite, layout=coord.norm)
+coord <- as.matrix(spatial[,3:4]) 
+
+
+plot(unipartite, layout=coord, edge.curved=.3, edge.color=adjustcolor("grey70", alpha.f = .3), vertex.label=NA, vertex.size=x*2, vertex.frame.color="white")
+
+plot(unipartite, layout=coord, edge.curved=.3, edge.color=adjustcolor("grey70", alpha.f = .3), vertex.label.color="white", 
+     vertex.label.font=2, vertex.label.family="Helvetica", vertex.label.cex=0.35, vertex.size=x*2, vertex.frame.color="white") # with labels
+
+
+```
+
+# Visualization (spatial unipartite network using the Renkonen index)
+
+Here I used the same approach as before but considering the Renkonen similarity index between all pairs of individual plants instead of the number of pollinator functional groups shared. The Rendonen index take into account the variation in pollinator composition. So, this index standarizes the visitations by pollinator functional groups among plant individual. Between each pair of individual plants, it calculates the minimum value of the relative abundance of pollinator i in plant a and the relative abundance of pollinator i in plant b; and then it sums all the values for each pollinator functional groups to calculate the similarity index for that pair of individual plants. 
+
+
+```{r vis.ps.unipartite}
+
+
+renkonen <- function(data, per.cent=FALSE){
+m <- as.data.frame(apply(data, 2, function(x) abs(x)/sum(abs(x))))
+if(ncol(data)>2){
+result <- as.data.frame(outer(m, m, Vectorize(function(x, y) sum(apply(data.frame(x, y), 1, min)))))
+}else{
+result <- sum(apply(m, 1, min))
+}
+if(per.cent==TRUE) return(result*100)
+if(per.cent==FALSE) return(result)
+}
+
+t.rocina.m <- t(rocina.m) ## the 'renkonen' function needs plant individuals as columns and pollinators as rows
+ps.unipartite <- renkonen(t.rocina.m)
+
+fix_nan <- function(x){
+    x[is.nan(x)] <- 0
+    x
+}
+ps.unipartite <- fix_nan(as.matrix(ps.unipartite)) # to replace NaN with 0
+str(ps.unipartite)
+
+###### coordinates layout
+
+ps.unipartite <- graph.adjacency(ps.unipartite, mode = "undirected", weighted = TRUE, diag = FALSE) # igraph object
+
+E(ps.unipartite)$weight #Las especies se han ordenado por nivel trófico y orden alfabético
+V(ps.unipartite)
+#plot(unipartite)
+
+## add spatial data
+
+spatial <- read.table("../Database/2019_05_24_algaida_bartomeus-completev2.csv", sep=";", header=T)
+
+spatial <- subset(spatial, Name %in% vertex_attr(unipartite, "name")) # only spatial info of vertices with interactions
+spatial <- spatial[order(spatial$Name),] # needs the same order as vertices
+
+sort(spatial$Name)
+sort(V(ps.unipartite)) # check that both vectors have the same length and names
+
+V(ps.unipartite)$size <- 8
+V(ps.unipartite)$frame.color <- "lightskyblue1"
+V(ps.unipartite)$color <- "steelblue3"
+E(ps.unipartite)$arrow.mode <- 0
+E(ps.unipartite)$width <- E(ps.unipartite)$weight/2
+
+coord.norm <- layout.norm(as.matrix(spatial[,3:4]))
+plot(ps.unipartite, layout=coord.norm)
+coord <- as.matrix(spatial[,3:4]) 
+
+
+plot(ps.unipartite, layout=coord, edge.curved=.3, edge.color="grey70", vertex.size=8, vertex.label.cex=0.7, 
+     vertex.label.font=2, vertex.label.family="Helvetica", vertex.label.color="white")
+
+
+```
+

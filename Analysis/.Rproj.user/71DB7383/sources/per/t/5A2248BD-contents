@@ -1,0 +1,823 @@
+---
+title: "FRS-analysis"
+author: "Blanca Arroyo-Correa"
+date: "8/8/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Prepare packages
+
+```{r packages, include = FALSE}
+
+library(ggplot2)
+library(network)
+library(reshape2)
+library(textshape)
+
+library(ggnet)
+library(ergm)
+library(intergraph)
+library(RColorBrewer)
+
+library(GGally)
+library(network)
+library(sna)
+
+library(dplyr)
+library(bipartite)
+library(gridGraphics)
+library(magrittr)
+
+library(igraph)
+library(wesanderson)
+
+library(ggbipart)
+
+library(vegan)
+library(plyr)
+library(rcompanion)
+library(boot)
+library(Hmisc)
+library(gstat)
+library(sp)
+
+library(spdep)
+library(spatstat)
+library(mgcv)
+library(nortest)
+library(gstat)
+library(ncf)
+library(mpmcorrelogram)
+library(MuMIn)
+library(modEvA)
+library("viridis")
+
+
+```
+
+
+# Import interaction data 
+
+I constructed the interaction matrix using the complete dataset of interactions recorded in La Rocina for 60 individual plants. The datafram "rocina.m" includes absolute number of visits from each pollinator functional group as interactions while "rocina.m.per" includes % of visits from each functional group compared to the total number of visits per individual plant. 
+
+```{r read, echo=FALSE}
+
+#rocina <- read.table("../Database/rocina_halimium_withdo_09072019.csv", sep=";", header=T)
+rocina <- read.table("../Database/rocina_halimium_09072019.csv", sep=";", header=T)
+
+head(rocina)
+str(rocina)
+rocina$N_visitations <- as.numeric(rocina$N_visitations)
+rocina.abs <- rocina[,c(5,7,8)]
+
+rocina.abs <- dcast(rocina.abs, Plant_ID ~ Pollinator_fg, value.var="N_visitations", fun.aggregate = sum)
+#rocina.m <- rocina.m %>% column_to_rownames("Plant_ID")
+rocina.abs$nothing <- NULL
+rocina.abs$Butterfly <- NULL
+
+colSums(rocina.abs[,2:9])/sum(rocina.abs[,2:9]) # percentage of visits by each functional group (total)
+
+str(rocina.abs)
+rocina.rel <- rocina.abs[, 2:9]*100/rowSums(rocina.abs[, 2:9]) # calculate percentage of visits of each pollinator functional group
+rocina.rel$Butterfly <- NULL
+
+#rocina.m.per <- data.matrix(rocina.m.per)  # dataframe to matrix to use is.nan function
+#rocina.m.per[is.nan(rocina.m.per)] <- 0
+
+#rocina.m.per <- as.data.frame(rocina.m.per) # matrix to dataframe to add plant ID
+rocina.rel$Plant_ID <- rocina.abs$Plant_ID
+
+
+
+```
+
+
+# Import individual data (fitness and attributes)
+
+To quantify the reproductive success of each individual plant, I first calculated the fruit set as the proportion of flowers setting fruits. To do that, I collected 5 to 10 inflorescences per plant and counted the total number of flower buds produced and the number of fruits set. Second, in order to obtain the seed production per fruit in each plant I collected five fruits per plant and sampled them to count the number of seeds. Here I merged the fruit and seed production data and the interaction matrix with % of visits. Female reproductive success (FRS) was calculated as the product of the total number of flowers, the fruits set, the mean number od seeds per fruit and weithed by mean seed mass.
+
+```{r fitness.data, echo=FALSE}
+
+individual <- read.table("../Database/individual_data_halimium_20190714.csv", sep=";", header=T)
+head(individual)
+str(individual)
+
+rocina.rel <- merge(rocina.rel, individual, by="Plant_ID")
+str(rocina.rel)
+rocina.abs <- merge(rocina.abs, individual, by="Plant_ID")
+str(rocina.abs)
+
+rocina.abs$Number_polfg <- apply(rocina.abs[, 2:9], 1, function(a) sum(a > 0)) 
+rocina.rel$Number_polfg <- apply(rocina.rel[, 2:9], 1, function(a) sum(a > 0)) 
+
+
+## Overall weighted fitness (normalized)
+
+rocina.abs$Fitness <- rocina.abs$Sum_flower_number * rocina.abs$Fruit_set * rocina.abs$Seed_set
+
+norm <- (rocina.abs$Seed_mass - min(rocina.abs$Seed_mass)) / (max(rocina.abs$Seed_mass) - min(rocina.abs$Seed_mass))
+rocina.abs$Fitness_w <- rocina.abs$Fitness * norm
+
+rocina.abs$Fitness_norm <- (rocina.abs$Fitness_w - min(rocina.abs$Fitness_w)) / 
+  (max(rocina.abs$Fitness_w) - min(rocina.abs$Fitness_w))
+
+####
+
+hist(individual$Seed_set)
+hist(individual$Fruit_set)
+
+plot(individual$Seed_set ~ individual$Fruit_set)
+abline(lm(individual$Seed_set ~ individual$Fruit_set), col="red")
+legend(x='bottomright', legend='Cor = 0.35  P-value < 0.05')
+
+plot(individual$Seed_mass ~ individual$Seed_set)
+abline(lm(individual$Seed_mass ~ individual$Seed_set), col="red")
+legend(x='topright', legend='Cor = -0.33  P-value < 0.05')
+
+cor.test(individual$Seed_mass, individual$Seed_set)
+
+
+```
+
+# Number of visits and visitation rate ~ number of flowers 
+
+In order to test whether the number of visits to each individual plant depended on the mean number of flowers produced, I performed correlations between total number of visits per plant, visitation rate (number of visits/mean number of flowers) and the total number of flowers during the peak flowering season. 
+
+```{r visits, echo=FALSE}
+
+
+# total visits per plant ~ flower number per plant
+plot(rocina.rel$Sum_flower_number, rocina.rel$Total_visits, xlab="Total number of flowers", ylab="Total number of visits", pch=18)
+abline(lm(rocina.rel$Total_visits ~ rocina.rel$Sum_flower_number), col="red")
+legend(x='topright', legend='Cor = 0.59  P-value < 0.001')
+
+cor.test(rocina.rel$Total_visits, rocina.rel$Sum_flower_number)
+
+v.rate <- rocina.rel$Total_visits/rocina.rel$Sum_flower_number  # total visits per flower  ~ flower number per plant
+plot(rocina.rel$Sum_flower_number, v.rate, xlab="Total number of flowers", ylab="Number of visits per flower", pch=18) 
+abline(lm(v.rate ~ rocina.rel$Sum_flower_number), col="red") 
+legend(x='topright', legend='Cor = -0.31  P-value < 0.05')
+
+cor.test(v.rate, rocina.rel$Sum_flower_number)
+
+```
+
+
+# Network analysis (centrality)
+
+I calculated three centrality metrics to characterize the topological role of individual plants in the pollination network: betweenness (BC), closeness (CC) and normalised degree (ND):
+
+  * Betweenness (BC): it reflects the number of shortest paths going through the focal node.
+  * Closeness (CC): it is the inverse of the average distance from the focal node to all other nodes.
+  * Normalised Degree (ND): defined by the number of links that are connected to that node.
+  
+To calculate these metrics I previously transformed the two-mode network into the unipartite (or one-mode) projection.
+
+```{r centrality}
+
+matrix <- column_to_rownames(rocina.abs[, 1:9], loc = 1)
+
+uni.matrix <- as.one.mode(matrix, fill = 0, project="lower", weighted=TRUE) # the centrality metrics are calculated for the one-mode projection
+
+
+centrality <- data.frame(matrix(ncol = 3, nrow = 60))
+x <- c("BC", "CC", "ND")
+colnames(centrality) <- x
+
+
+bc <- BC(matrix, rescale=TRUE, cmode="undirected", weighted=TRUE)
+centrality$BC <- bc$lower
+
+cc <- CC(matrix, cmode="suminvundir", rescale=TRUE)
+centrality$CC <- cc$lower
+
+nd <- ND(matrix, normalised=TRUE)
+centrality$ND <- nd$lower
+
+centrality$Plant_ID <- rocina.abs$Plant_ID
+
+cor.test(bc[[1]], nd[[1]], method="spear") 
+plot(bc$lower, nd$lower)
+cor.test(cc[[1]], nd[[1]], method="spear") 
+plot(cc$lower, nd$lower)
+
+hist(centrality$BC)
+hist(centrality$CC)
+hist(centrality$ND)
+
+
+```
+
+
+# Centrality metrics ~ % visits pollinator functional groups + pollinator richness + number of flowers
+
+I used product-moment correlations to test the relationship between centrality metrics and predictors (% visits, pollinator richness and number of flowers). Because centrality metrics only give information of those plants that were visited, I replaced all the 0 values in the interaction matrix with NAs before performing the correlation tests. Therefore, in a correlation between one centrality metric and the % of visits of a certain pollinator functional groups, I only considered those plants that were visited by that functional group. 
+
+
+```{r corr.central}
+
+
+rocina.rel <- merge(centrality, rocina.rel, by="Plant_ID")
+rocina.abs <- merge(centrality, rocina.abs, by="Plant_ID")
+
+
+## Remove zero values in each functional group
+
+rel.nozero <- rocina.rel
+
+rel.nozero$Beefly <- ifelse(rocina.rel$Beefly == 0, NA, rocina.rel$Beefly)
+#rel.nozero$Butterfly <- ifelse(rocina.rel$Butterfly == 0, NA, rocina.rel$Butterfly)
+rel.nozero$Hoverfly <- ifelse(rocina.rel$Hoverfly == 0, NA, rocina.rel$Hoverfly)
+rel.nozero$Large_bee <- ifelse(rocina.rel$Large_bee == 0, NA, rocina.rel$Large_bee)
+rel.nozero$Large_beetle <- ifelse(rocina.rel$Large_beetle == 0, NA, rocina.rel$Large_beetle)
+rel.nozero$Medium_size_bee <- ifelse(rocina.rel$Medium_size_bee == 0, NA, rocina.rel$Medium_size_bee)
+rel.nozero$Medium_size_beetle <- ifelse(rocina.rel$Medium_size_beetle == 0, NA, rocina.rel$Medium_size_beetle)
+rel.nozero$Small_bee <- ifelse(rocina.rel$Small_bee == 0, NA, rocina.rel$Small_bee)
+rel.nozero$Small_beetle <- ifelse(rocina.rel$Small_beetle == 0, NA, rocina.rel$Small_beetle)
+
+#######
+
+##### Product-moment correlations
+
+cor.test(rel.nozero$BC, rel.nozero$Beefly)
+
+#cor.test(rel.nozero$BC, rel.nozero$Butterfly) # only one observation
+
+cor.test(rel.nozero$BC, rel.nozero$Hoverfly)
+
+cor.test(rel.nozero$BC, rel.nozero$Large_bee)
+
+cor.test(rel.nozero$BC, rel.nozero$Large_beetle)
+
+cor.test(rel.nozero$BC, rel.nozero$Medium_size_bee)
+
+cor.test(rel.nozero$BC, rel.nozero$Medium_size_beetle)
+
+cor.test(rel.nozero$BC, rel.nozero$Small_bee)
+
+cor.test(rel.nozero$BC, rel.nozero$Small_beetle)
+
+cor.test(rel.nozero$BC, rel.nozero$Total_visits)
+cor.test(rel.nozero$BC, rel.nozero$Sum_flower_number)
+
+########
+
+
+##### Product-moment correlations
+
+cor.test(rel.nozero$CC, rel.nozero$Beefly)
+
+#cor.test(rel.nozero$CC, rel.nozero$Butterfly) # only one observation
+
+cor.test(rel.nozero$CC, rel.nozero$Hoverfly)
+
+cor.test(rel.nozero$CC, rel.nozero$Large_bee)
+
+cor.test(rel.nozero$CC, rel.nozero$Large_beetle)
+
+cor.test(rel.nozero$CC, rel.nozero$Medium_size_bee)
+
+cor.test(rel.nozero$CC, rel.nozero$Medium_size_beetle)
+
+cor.test(rel.nozero$CC, rel.nozero$Small_bee)
+
+cor.test(rel.nozero$CC, rel.nozero$Small_beetle)
+
+cor.test(rel.nozero$CC, rel.nozero$Total_visits)
+cor.test(rel.nozero$CC, rel.nozero$Sum_flower_number)
+
+
+######
+
+
+##### Product-moment correlations
+
+cor.test(rel.nozero$ND, rel.nozero$Beefly)
+
+#cor.test(rel.nozero$ND, rel.nozero$Butterfly) # only one observation
+
+cor.test(rel.nozero$ND, rel.nozero$Hoverfly)
+
+cor.test(rel.nozero$ND, rel.nozero$Large_bee)
+
+cor.test(rel.nozero$ND, rel.nozero$Large_beetle)
+
+cor.test(rel.nozero$ND, rel.nozero$Medium_size_bee)
+
+cor.test(rel.nozero$ND, rel.nozero$Medium_size_beetle)
+
+cor.test(rel.nozero$ND, rel.nozero$Small_bee)
+
+cor.test(rel.nozero$ND, rel.nozero$Small_beetle)
+
+cor.test(rel.nozero$ND, rel.nozero$Total_visits)
+cor.test(rel.nozero$ND, rel.nozero$Sum_flower_number)
+
+
+library(corrr)
+ccor.table <- rel.nozero[ , c(2:12, 22, 41)] %>% correlate() %>% focus(BC, CC, ND)
+
+library(ggplot2)
+rel.nozero[ , c(2, 5:12, 22, 41)] %>% correlate() %>% focus(BC) %>%
+  mutate(rowname = factor(rowname, levels = rowname[order(BC)])) %>%
+  ggplot(aes(x = rowname, y = BC)) +
+    geom_bar(stat = "identity", fill = "grey54") +
+    ylab("Correlation with BC") +
+    xlab("Variable") + annotate("text", x = c(1:5, 8:9), y = 0.40, label = c("**", "***", "*", "**", "*", "*", "**"), size=6) + theme_classic()
+
+rel.nozero[ , c(3, 5:12, 22, 41)] %>% correlate() %>% focus(CC) %>%
+  mutate(rowname = factor(rowname, levels = rowname[order(CC)])) %>%
+  ggplot(aes(x = rowname, y = CC)) +
+    geom_bar(stat = "identity",  fill = "grey54") +
+    ylab("Correlation with CC") +
+    xlab("Variable") + annotate("text", x = c(1:6, 8:9), y = 0.4, label = c("***", "***", "***", "**", "**", "*", "**", "**"), size = 6) + 
+  theme_classic()
+
+rel.nozero[ , c(4, 5:12, 22, 41)] %>% correlate() %>% focus(ND) %>%
+  mutate(rowname = factor(rowname, levels = rowname[order(ND)])) %>%
+  ggplot(aes(x = rowname, y = ND)) +
+    geom_bar(stat = "identity",  fill = "grey54") +
+    ylab("Correlation with ND") +
+    xlab("Variable") + annotate("text", x = c(1:5, 8:9), y = 0.5, label = c("**", "**", "***", "***", "**", "**", "***"), size = 6) + 
+  theme_classic()
+
+
+```
+
+
+# Fitness ~ centrality metrics and plant traits
+
+We first evaluated collinearity between predictor variables and we removed from the models all those collinear variables. We perform different models with the three fitness components (fruit set, number of seeds and seed mass) and then we fitted an overall model including FRS as the response variable.
+
+## Models with fitness components as response variables
+
+```{r fitness.tot}
+
+# With total visits
+
+vif_func<-function(in_frame,thresh=10,trace=T,...){
+	
+	require(fmsb)
+	
+	if(class(in_frame) != 'data.frame') in_frame<-data.frame(in_frame)
+	
+	#get initial vif value for all comparisons of variables
+	vif_init<-NULL
+	var_names <- names(in_frame)
+	for(val in var_names){
+		regressors <- var_names[-which(var_names == val)]
+		form <- paste(regressors, collapse = '+')
+		form_in <- formula(paste(val, '~', form))
+		vif_init<-rbind(vif_init, c(val, VIF(lm(form_in, data = in_frame, ...))))
+	}
+	vif_max<-max(as.numeric(vif_init[,2]), na.rm = TRUE)
+	
+	if(vif_max < thresh){
+		if(trace==T){ #print output of each iteration
+			prmatrix(vif_init,collab=c('var','vif'),rowlab=rep('',nrow(vif_init)),quote=F)
+			cat('\n')
+			cat(paste('All variables have VIF < ', thresh,', max VIF ',round(vif_max,2), sep=''),'\n\n')
+		}
+		return(var_names)
+	}
+	else{
+		
+		in_dat<-in_frame
+		
+		#backwards selection of explanatory variables, stops when all VIF values are below 'thresh'
+		while(vif_max >= thresh){
+			
+			vif_vals<-NULL
+			var_names <- names(in_dat)
+			
+			for(val in var_names){
+				regressors <- var_names[-which(var_names == val)]
+				form <- paste(regressors, collapse = '+')
+				form_in <- formula(paste(val, '~', form))
+				vif_add<-VIF(lm(form_in, data = in_dat, ...))
+				vif_vals<-rbind(vif_vals,c(val,vif_add))
+			}
+			max_row<-which(vif_vals[,2] == max(as.numeric(vif_vals[,2]), na.rm = TRUE))[1]
+			
+			vif_max<-as.numeric(vif_vals[max_row,2])
+			
+			if(vif_max<thresh) break
+			
+			if(trace==T){ #print output of each iteration
+				prmatrix(vif_vals,collab=c('var','vif'),rowlab=rep('',nrow(vif_vals)),quote=F)
+				cat('\n')
+				cat('removed: ',vif_vals[max_row,1],vif_max,'\n\n')
+				flush.console()
+			}
+			
+			in_dat<-in_dat[,!names(in_dat) %in% vif_vals[max_row,1]]
+			
+		}
+		
+		return(names(in_dat))
+		
+	}
+	
+}
+
+require(VIF)
+
+x <- vif_func(rocina.abs[, c(2:13, 16:35, 42)], thresh=2, trace=T) 
+
+res2 <- rcorr(as.matrix(rocina.abs[, c(2:13, 16:35, 42)]))
+res2$P
+which(res2$P < 0.05)
+
+true <- res2$P[] < 0.05 & res2$r[] > 0.4 
+
+#####################
+
+
+hist(rocina.abs$Seed_set)
+shapiro.test(rocina.abs$Seed_set)
+rocina.abs$Seed_set[which(rocina.abs$Seed_set==0)] = NA
+
+fit9 <- lm(Seed_set ~ #Beefly + Butterfly + Hoverfly + Large_bee + Large_beetle + Medium_size_bee + Medium_size_beetle + Small_bee + Small_beetle
+           + BC
+           + CC
+           #+ ND
+           + Max_height_m
+           #+ Mean_height_m
+           #+ Area_m2
+           #+ Perimeter_m
+           + Flower_guide
+           + Flower_size
+           #+ Mean_flower_number
+           + Sum_flower_number
+           + Synchrony_marquis
+           + Distance_to_stream
+           + Distance_to_tree
+           + Distance_to_edge
+           #+ Neighbour_intra_05m_m2
+           #+ Neighbour_inter_05m_m2 
+           + Neighbour_intra_1m_m2
+           + Neighbour_inter_1m_m2,
+           #+ Neighbour_intra_2m_m2
+           #+ Neighbour_inter_2m_m2, 
+           #+ Neighbour_intra_3m_m2
+           #+ Neighbour_inter_3m_m2,
+           #+ Total_visits, 
+           data=rocina.abs)
+
+summary(fit9)
+BIC(fit9)
+
+par(mfrow=c(2,2))
+plot(fit9)
+
+# lmg calculates the relative contribution of each predictor to the R square with the consideration of the sequence of predictors appearing in the model
+#calc.relimp(fit9)
+#bootresults<-boot.relimp(fit9, b=1000) 
+#ci<-booteval.relimp(bootresults, norank=T)
+#plot(ci)
+
+##############################
+
+
+hist(rocina.abs$Fruit_set)
+shapiro.test(rocina.abs$Fruit_set)
+rocina.abs$Fruit_set
+
+fit10 <- lm(Fruit_set ~ #Beefly + Butterfly + Hoverfly + Large_bee + Large_beetle + Medium_size_bee + Medium_size_beetle + Small_bee + Small_beetle
+           + BC
+           + CC
+           #+ ND
+           + Max_height_m
+           #+ Mean_height_m
+           #+ Area_m2
+           #+ Perimeter_m
+           + Flower_guide
+           + Flower_size
+           #+ Mean_flower_number
+           + Sum_flower_number
+           + Synchrony_marquis
+           + Distance_to_stream
+           + Distance_to_tree
+           + Distance_to_edge
+           #+ Neighbour_intra_05m_m2
+           #+ Neighbour_inter_05m_m2 
+           + Neighbour_intra_1m_m2
+           + Neighbour_inter_1m_m2,
+           #+ Neighbour_intra_2m_m2
+           #+ Neighbour_inter_2m_m2, 
+           #+ Neighbour_intra_3m_m2
+           #+ Neighbour_inter_3m_m2,
+           #+ Total_visits, 
+           data=rocina.abs)
+
+summary(fit10)
+BIC(fit10)
+
+par(mfrow=c(2,2))
+plot(fit10)
+
+# lmg calculates the relative contribution of each predictor to the R square with the consideration of the sequence of predictors appearing in the model
+#calc.relimp(fit10)
+#bootresults<-boot.relimp(fit10, b=1000) 
+#ci<-booteval.relimp(bootresults, norank=T)
+#plot(ci)
+
+
+##############################
+
+
+hist(rocina.rel$Seed_mass)
+shapiro.test(rocina.abs$Seed_mass)
+rocina.abs$Seed_mass[which(rocina.abs$Seed_mass==0)] = NA
+
+fit11 <- lm(Seed_mass*1000 ~ #Beefly + Butterfly + Hoverfly + Large_bee + Large_beetle + Medium_size_bee + Medium_size_beetle + Small_bee + Small_beetle
+           + BC
+           + CC
+           #+ ND
+           + Max_height_m
+           #+ Mean_height_m
+           #+ Area_m2
+           #+ Perimeter_m
+           + Flower_guide
+           + Flower_size
+           #+ Mean_flower_number
+           + Sum_flower_number
+           + Synchrony_marquis
+           + Distance_to_stream
+           + Distance_to_tree
+           + Distance_to_edge
+           #+ Neighbour_intra_05m_m2
+           #+ Neighbour_inter_05m_m2 
+           + Neighbour_intra_1m_m2
+           + Neighbour_inter_1m_m2,
+           #+ Neighbour_intra_2m_m2
+           #+ Neighbour_inter_2m_m2, 
+           #+ Neighbour_intra_3m_m2
+           #+ Neighbour_inter_3m_m2,
+           #+ Total_visits, 
+           data=rocina.abs)
+
+summary(fit11)
+BIC(fit11)
+
+par(mfrow=c(2,2))
+plot(fit11)
+
+
+```
+
+## Complete model with FRS as the response variable (GLM with quasibinomial errors)
+
+FRS was normalized using the min-max method and we fitted a GLM with quasibinomial errors to account for overdispersion (zero-inflated data). We then analyzed wether the residuals were spatially autocorrelated. 
+
+```{r quasibinomial}
+
+
+fit12 <- glm(Fitness_norm ~ #Beefly + Butterfly + Hoverfly + Large_bee + Large_beetle + Medium_size_bee + Medium_size_beetle + Small_bee + Small_beetle
+           + scale(BC)
+           + scale(CC)
+           #+ ND
+           + scale(Max_height_m)
+           #+ Mean_height_m
+           #+ Area_m2
+           #+ Perimeter_m
+           + scale(Flower_guide)
+           + scale(Flower_size)
+           #+ Mean_flower_number
+           + scale(Sum_flower_number)
+           + scale(Synchrony_marquis)
+           + scale(Distance_to_stream)
+           + scale(Distance_to_tree)
+           + scale(Distance_to_edge)
+           #+ Neighbour_intra_05m_m2
+           #+ Neighbour_inter_05m_m2 
+           + scale(Neighbour_intra_1m_m2)
+           + scale(Neighbour_inter_1m_m2)
+           + scale(Neighbour_intra_2m_m2)
+           + scale(Neighbour_inter_2m_m2), 
+           #+ Neighbour_intra_3m_m2
+           #+ Neighbour_inter_3m_m2,
+           #+ Total_visits,
+           family=quasibinomial(link=logit),
+           data=rocina.abs)
+
+summary(fit12)
+Dsquared(fit12, adjust=TRUE)
+par(mfrow=c(2,2))
+plot(fit12) 
+
+library(relaimpo)
+calc.relimp(lm(Fitness_norm ~ 
+           + scale(BC)
+           + scale(CC)
+           + scale(Max_height_m)
+           + scale(Flower_guide)
+           + scale(Flower_size)
+           + scale(Sum_flower_number)
+           + scale(Synchrony_marquis)
+           + scale(Distance_to_stream)
+           + scale(Distance_to_tree)
+           + scale(Distance_to_edge)
+           + scale(Neighbour_intra_1m_m2)
+           + scale(Neighbour_inter_1m_m2)
+           + scale(Neighbour_intra_2m_m2)
+           + scale(Neighbour_inter_2m_m2),
+           data=rocina.abs))
+
+
+## Plots
+
+plot.eff <- as.data.frame(coef(summary(fit12))[-1, 1:2])
+plot.eff <- tibble::rownames_to_column(plot.eff)
+names(plot.eff)[1] <- "Variable"
+
+type.var <- c(rep("Topological role (centrality)", 2), rep("Intrinsic plant attribute", 5), 
+         rep("Extrinsic plant attribute", 7))
+plot.eff <- cbind(plot.eff, type.var)
+plot.eff$type.var <- factor(type.var)
+
+ggplot(plot.eff, aes(x=reorder(Variable, Estimate), y=Estimate, fill=type.var, colour=type.var)) +
+  geom_hline(yintercept=0, linetype="dashed", lwd=0.6, colour="grey50") + 
+      geom_bar(alpha=0.5, stat="identity", position=position_dodge(0.9), 
+               width=0.5) + theme_classic()  + 
+  scale_fill_brewer(palette="Dark2") + scale_colour_brewer(palette="Dark2") + scale_x_discrete(breaks=c("scale(BC)", "scale(CC)", "scale(Max_height_m)", "scale(Flower_guide)",
+                            "scale(Flower_size)", "scale(Sum_flower_number)",
+                            "scale(Synchrony_marquis)", "scale(Distance_to_stream)",
+                            "scale(Distance_to_tree)", "scale(Distance_to_edge)",
+                            "scale(Neighbour_intra_1m_m2)", "scale(Neighbour_inter_1m_m2)", 
+                            "scale(Neighbour_intra_2m_m2)", "scale(Neighbour_inter_2m_m2)"), 
+                   labels=c("Betweenness", "Closeness", "Maximum height", "Flower guide size", "Flower size", 
+                            "Total number of flowers", "Flowering synchrony", "Distance to stream", 
+                            "Distance to tree", "Distance to edge", "Intraspecific neighbours r=1m",
+                            "Interspecific neighbours r=1m", "Intraspecific neighbours r=2m", 
+                            "Interspecific neighbours r=2m")) +
+  theme(axis.title.y = element_blank()) +
+  theme(axis.text.x = element_text(size = 15, margin = margin(t = 15, r = 0, b = 0, l = 0)), 
+    axis.text.y = element_text(size = 15, margin = margin(t = 0, r = 15, b = 0, l = 0)), 
+    legend.text = element_text(size = 15), legend.key.size = unit(1.0, "cm"),
+    axis.title=element_text(size=16,face="bold"),
+    legend.title = element_blank()) + coord_flip()
+
+
+
+
+```
+
+# Partial effects plots
+
+```{r effects plot}
+
+
+library(car)
+crPlots(fit12)
+
+library(visreg)
+visreg(fit12, "CC", scale="response", partial=T, gg=TRUE, 
+       line=list(col="grey50"), fill=list(fill="grey80", alpha=0.5),
+       points=list(size=3, col="#4E9C7B")) + 
+  theme_bw() + 
+  labs(x = "Closeness centrality", y= "FRS") +
+  theme(axis.text.x = element_text(size = 18), 
+    axis.text.y = element_text(size = 18), axis.title=element_text(size=23), 
+    axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+    axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) + scale_y_continuous(limits = c(0, 1)) 
+
+visreg(fit12, "Sum_flower_number", scale="response", partial=T, gg=TRUE, 
+       line=list(col="grey50"), fill=list(fill="grey80", alpha=0.5),
+       points=list(size=3, col="#4E9C7B")) + 
+  theme_bw() + 
+  labs(x = "Total number of flowers", y= "FRS") +
+  theme(axis.text.x = element_text(size = 18), 
+    axis.text.y = element_text(size = 18), axis.title=element_text(size=23), 
+    axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+    axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) + 
+  scale_x_log10() + scale_y_log10()
+
+visreg(fit12, "Synchrony_marquis", scale="response", partial=T, gg=TRUE, 
+       line=list(col="grey50"), fill=list(fill="grey80", alpha=0.5),
+       points=list(size=3, col="#4E9C7B")) + 
+  theme_bw() + 
+  labs(x = "Flowering synchrony", y= "FRS") +
+  theme(axis.text.x = element_text(size = 18), 
+    axis.text.y = element_text(size = 18), axis.title=element_text(size=23), 
+    axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+    axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) + 
+  scale_x_log10() + scale_y_log10()
+
+
+######## effect function
+
+library(effects)
+eff.cc = effect("scale(CC)", fit12, partial.residuals=T)
+
+library(ggplot2)
+library(gridExtra)
+
+closest <- function(x, x0) apply(outer(x, x0, FUN=function(x, x0) abs(x - x0)), 1, which.min)
+
+x.fit.cc <- unlist(eff.cc$x.all)
+trans <- I
+x.cc <- data.frame(lower = eff.cc$lower, upper = eff.cc$upper, fit = eff.cc$fit, CC = eff.cc$x$CC)
+xy.cc <- data.frame(x = x.fit.cc, y = x.cc$fit[closest(trans(x.fit.cc), x.cc$CC)] + eff.cc$residuals)
+
+g.cc <- ggplot(x.cc, aes(x = CC, y = fit)) +
+  theme_bw() +
+  geom_line(size = 1) +
+  geom_point(data = xy.cc, aes(x = (x), y = y), col = "#4E9C7B", size = 3) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.18) + labs(x = "Closeness centrality", y= "FRS") +
+  theme(axis.text.x = element_text(size = 18), 
+    axis.text.y = element_text(size = 18), axis.title=element_text(size=23), 
+    axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+    axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) +
+  coord_trans(y = "exp")
+#+ geom_smooth(data = xy, aes(x = trans(x), y = y),  method = "loess", span = 2/3, linetype = "dashed", se = FALSE)
+
+
+
+eff.nf = effect("scale(Sum_flower_number)", fit12, partial.residuals=T)
+plot(eff.nf)
+
+closest <- function(x, x0) apply(outer(x, x0, FUN=function(x, x0) abs(x - x0)), 1, which.min)
+
+x.fit.nf <- unlist(eff.nf$x.all)
+trans <- I
+x.nf <- data.frame(lower = eff.nf$lower, upper = eff.nf$upper, fit = eff.nf$fit, NF = eff.nf$x$Sum_flower_number)
+xy.nf <- data.frame(x = x.fit.nf, y = x.nf$fit[closest(trans(x.fit.nf), x.nf$NF)] + eff.nf$residuals)
+
+g.nf <- ggplot(x.nf, aes(x = (NF), y = fit)) +
+  theme_bw() +
+  geom_line(size = 1) +
+  geom_point(data = xy.nf, aes(x = (x), y = y), col = "#4E9C7B", size = 3) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.18) + labs(x = "Total number of flowers", y= "FRS") +
+  theme(axis.text.x = element_text(size = 18), 
+    axis.text.y = element_text(size = 18), axis.title=element_text(size=23), 
+    axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+    axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) +
+  scale_x_log10() + scale_y_log10(breaks=c(1, 3, 10), labels=c("-4", "-2", "5"))
+#+ geom_smooth(data = xy, aes(x = trans(x), y = y),  method = "loess", span = 2/3, linetype = "dashed", se = FALSE)
+
+
+eff.sinc = effect("scale(Synchrony_marquis)", fit12, partial.residuals=T)
+
+closest <- function(x, x0) apply(outer(x, x0, FUN=function(x, x0) abs(x - x0)), 1, which.min)
+
+x.fit.sinc <- unlist(eff.sinc$x.all)
+trans <- I
+x.sinc <- data.frame(lower = eff.sinc$lower, upper = eff.sinc$upper, fit = eff.sinc$fit, SINC = eff.sinc$x$Synchrony_marquis)
+xy.sinc <- data.frame(x = x.fit.sinc, y = x.sinc$fit[closest(trans(x.fit.sinc), x.sinc$SINC)] + eff.sinc$residuals)
+
+g.sinc <- ggplot(x.sinc, aes(x = (SINC), y = fit+5)) +
+  theme_bw() +
+  geom_line(size = 1) +
+  geom_point(data = xy.sinc, aes(x = (x), y = y+5), col = "#4E9C7B", size = 3) +
+  geom_ribbon(aes(ymin = lower+5, ymax = upper+5), alpha = 0.18) + labs(x = "Flowering synchrony", y= "FRS") +
+  theme(axis.text.x = element_text(size = 18), 
+    axis.text.y = element_text(size = 18), axis.title=element_text(size=23), 
+    axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+    axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) +
+  scale_x_log10() + scale_y_log10(breaks=c(1, 3, 5), labels=c("-4", "-2", "0"))
+#+ geom_smooth(data = xy, aes(x = trans(x), y = y),  method = "loess", span = 2/3, linetype = "dashed", se = FALSE)
+
+
+
+```
+
+
+# Test for residuals spatial autocorrelation
+
+```{r spatial residuals}
+
+#https://fukamilab.github.io/BIO202/08-B-spatial-regression.html
+spat_data = data.frame(error = rstandard(fit12), x = rocina.abs[-c(34, 57, 58),]$Longitude, y = rocina.abs[-c(34, 57, 58),]$Latitude)
+coordinates(spat_data) <- c("x","y") 
+bubble(spat_data, "error", col = c("black","grey"),
+       main = "Residuals", xlab = "X-coordinates", ylab = "Y-coordinates")
+
+plot(spat_data$error ~ spat_data$x, xlab = "X-coordinates", ylab = "Errors")
+plot(spat_data$error ~ spat_data$y, xlab = "Y-coordinates", ylab = "Errors")
+plot(variogram(error ~ 1, spat_data))
+
+
+
+```
+
+
+# Calculation of variable importance (contribution of fitness components to the overall weighted fitness (i.e. FRS))
+
+```{r relaimpo}
+
+library(relaimpo)
+calc.relimp(lm(Fitness_norm ~ Sum_flower_number + Fruit_set + Seed_set + Seed_mass, data = rocina.abs))
+
+
+```
+
+
+

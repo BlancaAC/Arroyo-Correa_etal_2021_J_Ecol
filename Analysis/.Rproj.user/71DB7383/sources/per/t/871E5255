@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1587118362843.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "2106904772",
+    "id" : "871E5255",
+    "lastKnownWriteTime" : 1587118468,
+    "last_content_update" : 1587118468815,
+    "path" : "~/Desktop/MS_Arroyo-Correa_2020/Analysis/Network-plots.Rmd",
+    "project_path" : "Network-plots.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console",
+        "cursorPosition" : "343,0",
+        "scrollLine" : "305"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

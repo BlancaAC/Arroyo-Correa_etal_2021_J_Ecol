@@ -1,0 +1,194 @@
+---
+title: "Spatial-structure"
+author: "Blanca Arroyo-Correa"
+date: "8/8/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages
+
+```{r packages, include = FALSE}
+
+library(ggplot2)
+library(reshape2)
+library(textshape)
+
+library(vegan)
+library(plyr)
+
+library(ape)
+library(tidyr)
+library(bipartite)
+library(dplyr)
+
+```
+
+
+# Import individual data
+
+```{r read, echo=FALSE}
+
+rocina <- read.table("../Database/rocina_halimium_09072019.csv", sep=";", header=T)
+rocina$N_visitations <- as.numeric(rocina$N_visitations)
+rocina.abs <- rocina[,c(5,7,8)]
+
+rocina.abs <- dcast(rocina.abs, Plant_ID ~ Pollinator_fg, value.var="N_visitations", fun.aggregate = sum)
+rocina.abs$nothing <- NULL
+
+rocina.rel <- rocina.abs[, 2:10]*100/rowSums(rocina.abs[, 2:10]) # calculate percentage of visits of each pollinator functional group
+rocina.rel$Plant_ID <- rocina.abs$Plant_ID
+
+
+individual <- read.table("../Database/individual_data_halimium_20190714.csv", sep=";", header=T)
+head(individual)
+str(individual)
+
+rocina.rel <- merge(rocina.rel, individual, by="Plant_ID")
+str(rocina.rel)
+rocina.abs <- merge(rocina.abs, individual, by="Plant_ID")
+str(rocina.abs)
+
+## Overall weighted fitness (normalized)
+
+rocina.abs$Fitness <- rocina.abs$Sum_flower_number * rocina.abs$Fruit_set * rocina.abs$Seed_set
+
+norm <- (rocina.abs$Seed_mass - min(rocina.abs$Seed_mass)) / (max(rocina.abs$Seed_mass) - min(rocina.abs$Seed_mass))
+rocina.abs$Fitness_w <- rocina.abs$Fitness * norm
+
+rocina.abs$Fitness_norm <- (rocina.abs$Fitness_w - min(rocina.abs$Fitness_w)) / 
+  (max(rocina.abs$Fitness_w) - min(rocina.abs$Fitness_w))
+
+```
+
+# Distance computation
+
+```{r read, echo=FALSE}
+
+ind.dists <- as.matrix(dist(cbind(rocina.abs$Longitude, rocina.abs$Latitude)))
+
+ind.dists.inv <- 1/ind.dists
+diag(ind.dists.inv) <- 0
+ 
+ind.dists.inv[1:5, 1:5]
+
+```
+
+# Spatial autocorrelation for intrinsic attributes
+
+```{r read, echo=FALSE}
+
+Moran.I(rocina.abs$Max_height_m, ind.dists.inv)
+Moran.I(rocina.abs$Mean_height_m, ind.dists.inv)
+Moran.I(rocina.abs$Area_m2, ind.dists.inv)
+Moran.I(rocina.abs$Perimeter_m, ind.dists.inv)
+
+Moran.I(rocina.abs$Flower_guide, ind.dists.inv)
+Moran.I(rocina.abs$Flower_size, ind.dists.inv)
+Moran.I(rocina.abs$Mean_flower_number, ind.dists.inv)
+Moran.I(rocina.abs$Sum_flower_number, ind.dists.inv)
+Moran.I(rocina.abs$Synchrony_marquis, ind.dists.inv)
+Moran.I(rocina.abs$Fruit_set, ind.dists.inv)  ## Significant
+Moran.I(rocina.abs$Seed_set, ind.dists.inv)  ## Significant
+Moran.I(rocina.abs$Seed_mass, ind.dists.inv, na.rm = TRUE)
+
+Moran.I(rocina.abs$Total_visits, ind.dists.inv)
+
+Moran.I(rocina.abs$Fitness_norm, ind.dists.inv)
+
+ggplot(rocina.abs, aes(Longitude, Latitude, size = Fruit_set)) +
+  geom_point(alpha = 0.5, show.legend = FALSE, colour = "seagreen4", stroke=1.5) + 
+  theme_classic() + theme(axis.title = element_text(size = 16), axis.text = element_text(size = 14)) + labs(title="Fruit set (%)")
+
+#+ theme(plot.margin = margin(1, 2, 1, 1, "cm")) +
+  #theme(axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+        #axis.title.x= element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) 
+
+ggplot(rocina.abs, aes(Longitude, Latitude, size = Seed_set)) +
+  geom_point(alpha = 0.5, show.legend = FALSE, colour = "seagreen4", stroke=1.5) + 
+  theme_classic() + theme(axis.title = element_text(size = 16), axis.text = element_text(size = 14)) + labs(title="Number of seeds per fruit")
+
+#+ theme(plot.margin = margin(1, 2, 1, 1, "cm")) +
+  #theme(axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+        #axis.title.x= element_text(margin = margin(t = 20, r = 0, b = 0, l = 0)))
+
+
+
+
+```
+
+
+# Spatial autocorrelation for extrinsic plant attributes
+
+```{r read, echo=FALSE}
+
+Moran.I(rocina.abs$Neighbour_intra_1m_m2, ind.dists.inv)
+Moran.I(rocina.abs$Neighbour_inter_1m_m2, ind.dists.inv)
+Moran.I(rocina.abs$Neighbour_intra_2m_m2, ind.dists.inv)
+Moran.I(rocina.abs$Neighbour_inter_2m_m2, ind.dists.inv)
+
+Moran.I(rocina.abs$Distance_to_stream, ind.dists.inv)
+Moran.I(rocina.abs$Distance_to_tree, ind.dists.inv)
+Moran.I(rocina.abs$Distance_to_edge, ind.dists.inv)
+
+
+
+```
+
+
+# Spatial autocorrelation for number of visits
+
+```{r read, echo=FALSE}
+
+
+Moran.I(rocina.abs$Beefly, ind.dists.inv)
+Moran.I(rocina.abs$Butterfly, ind.dists.inv)
+Moran.I(rocina.abs$Hoverfly, ind.dists.inv)
+Moran.I(rocina.abs$Large_bee, ind.dists.inv) ## Significant
+Moran.I(rocina.abs$Large_beetle, ind.dists.inv)
+Moran.I(rocina.abs$Medium_size_bee, ind.dists.inv)
+Moran.I(rocina.abs$Medium_size_beetle, ind.dists.inv)
+Moran.I(rocina.abs$Small_bee, ind.dists.inv)
+Moran.I(rocina.abs$Small_beetle, ind.dists.inv)
+
+ggplot(rocina.abs, aes(Longitude, Latitude, size = rocina.abs$Large_bee)) +
+  geom_point(alpha = 0.5, show.legend = FALSE, colour = "seagreen4", stroke=1.5) + theme_classic() + theme(axis.title = element_text(size = 20), axis.text = element_text(size = 14))  + labs(title="Number of visits by large bees")
+ # +theme(plot.margin = margin(1, 2, 1, 1, "cm")) +
+  #theme(axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+       # axis.title.x= element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) 
+
+
+
+```
+
+# Spatial autocorrelation for percentage of visits (% functional groups)
+
+```{r read, echo=FALSE}
+
+
+Moran.I(rocina.rel$Beefly, ind.dists.inv)
+Moran.I(rocina.rel$Butterfly, ind.dists.inv)
+Moran.I(rocina.rel$Hoverfly, ind.dists.inv)
+Moran.I(rocina.rel$Large_bee, ind.dists.inv) ## Significant
+Moran.I(rocina.rel$Large_beetle, ind.dists.inv)
+Moran.I(rocina.rel$Medium_size_bee, ind.dists.inv)
+Moran.I(rocina.rel$Medium_size_beetle, ind.dists.inv)
+Moran.I(rocina.rel$Small_bee, ind.dists.inv)
+Moran.I(rocina.rel$Small_beetle, ind.dists.inv)
+
+ggplot(ind, aes(Longitude, Latitude, size = rocina.rel$Large_bee)) +
+  geom_point(alpha = 0.5, show.legend = FALSE, colour = "seagreen4", stroke=1.5) + theme_classic() + theme(axis.title = element_text(size = 20), 
+    axis.text = element_text(size = 14)) +
+  theme(plot.margin = margin(1, 2, 1, 1, "cm")) +
+  theme(axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)), 
+        axis.title.x= element_text(margin = margin(t = 20, r = 0, b = 0, l = 0))) + labs(title="% of visits by large bees")
+
+
+
+```
+

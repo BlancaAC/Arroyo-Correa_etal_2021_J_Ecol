@@ -1,0 +1,24 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1587118018257.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "4290178083",
+    "id" : "23AFE61F",
+    "lastKnownWriteTime" : 1565266444,
+    "last_content_update" : 1565266444,
+    "path" : "~/Desktop/MS_Arroyo-Correa_2020/Analysis/Flowering-phenology.Rmd",
+    "project_path" : "Flowering-phenology.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

@@ -1,0 +1,282 @@
+---
+title: "CCA"
+author: "Blanca Arroyo-Correa"
+date: "8/8/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+# Load packages
+
+```{r packages, message= FALSE, warning=FALSE}
+
+require(ggplot2)
+require(GGally)
+require(CCA)
+
+library(ggplot2)
+library(dplyr)
+library(maditr)
+library(textshape)
+library(CCP)
+```
+
+# Read data (interactions and plant traits)
+
+```{r data frame, echo= TRUE, message= TRUE, warning= TRUE}
+
+int <- read.table("../Database/rocina_halimium_09072019.csv", sep=";", header=T)
+int$N_visitations <- as.numeric(int$N_visitations)
+int <- int[,c(5,7,8)]
+
+int <- dcast(int, Plant_ID ~ Pollinator_fg, value.var="N_visitations", fun.aggregate = sum)
+int$nothing <- NULL
+int$Butterfly <- NULL
+
+individual <- read.table("../Database/individual_data_halimium_20190714.csv", sep=";", header=T)
+str(individual)
+
+data <- merge(int, individual, by="Plant_ID")
+
+
+ind <- data %>%  
+           dplyr::select(c(12:31))  # Select columns with plant traits 
+str(ind)
+
+pol <- data %>% 
+           dplyr::select(2:9) # Select columns with pollinator functional groups' visitations
+           
+str(pol)
+
+```
+
+
+# Evaluate collinearity
+
+We are setting a strict threshold of `thresh= 2`
+
+```{r collinearity}
+
+# Evaluate Collinearity
+
+vif_func<-function(in_frame,thresh=10,trace=T,...){
+	
+	require(fmsb)
+	
+	if(class(in_frame) != 'data.frame') in_frame<-data.frame(in_frame)
+	
+	#get initial vif value for all comparisons of variables
+	vif_init<-NULL
+	var_names <- names(in_frame)
+	for(val in var_names){
+		regressors <- var_names[-which(var_names == val)]
+		form <- paste(regressors, collapse = '+')
+		form_in <- formula(paste(val, '~', form))
+		vif_init<-rbind(vif_init, c(val, VIF(lm(form_in, data = in_frame, ...))))
+	}
+	vif_max<-max(as.numeric(vif_init[,2]), na.rm = TRUE)
+	
+	if(vif_max < thresh){
+		if(trace==T){ #print output of each iteration
+			prmatrix(vif_init,collab=c('var','vif'),rowlab=rep('',nrow(vif_init)),quote=F)
+			cat('\n')
+			cat(paste('All variables have VIF < ', thresh,', max VIF ',round(vif_max,2), sep=''),'\n\n')
+		}
+		return(var_names)
+	}
+	else{
+		
+		in_dat<-in_frame
+		
+		#backwards selection of explanatory variables, stops when all VIF values are below 'thresh'
+		while(vif_max >= thresh){
+			
+			vif_vals<-NULL
+			var_names <- names(in_dat)
+			
+			for(val in var_names){
+				regressors <- var_names[-which(var_names == val)]
+				form <- paste(regressors, collapse = '+')
+				form_in <- formula(paste(val, '~', form))
+				vif_add<-VIF(lm(form_in, data = in_dat, ...))
+				vif_vals<-rbind(vif_vals,c(val,vif_add))
+			}
+			max_row<-which(vif_vals[,2] == max(as.numeric(vif_vals[,2]), na.rm = TRUE))[1]
+			
+			vif_max<-as.numeric(vif_vals[max_row,2])
+			
+			if(vif_max<thresh) break
+			
+			if(trace==T){ #print output of each iteration
+				prmatrix(vif_vals,collab=c('var','vif'),rowlab=rep('',nrow(vif_vals)),quote=F)
+				cat('\n')
+				cat('removed: ',vif_vals[max_row,1],vif_max,'\n\n')
+				flush.console()
+			}
+			
+			in_dat<-in_dat[,!names(in_dat) %in% vif_vals[max_row,1]]
+			
+		}
+		
+		return(names(in_dat))
+		
+	}
+	
+}
+
+require(VIF)
+
+vif_func(in_frame= pol, thresh=2, trace=T)  # collinearity of visitations
+vif_func(in_frame= ind, thresh=2, trace=T)  # collinearity of plant traits
+
+ind <- ind[, c(1, 5, 6, 8:12, 15:18)] # remove collinear variables in plant traits  
+
+```
+
+# We’ll look at the correlations within and between the two sets of variables using the matcor function from the CCA package.
+
+
+```{r correlations, echo= TRUE, message= TRUE, warning= TRUE}
+
+matcor(as.matrix(pol), as.matrix(ind))
+
+```
+
+
+The function cc performs Canonical Correlation Analysis to highlight correlations between the two original data sets. The canonical squared correlation coefficients represent the proportion of the total variance explained by each pair of canonical variables. 
+
+```{r corr coefficients, echo= TRUE, message= TRUE, warning= TRUE}
+
+# Grazed lands
+ccpol <-cc(as.matrix(pol), as.matrix(ind))
+ccpol$cor ## $cor --> correlation R of the canonical variables
+str(ccpol)
+
+lambda = (1- ccpol$cor[1])*(1- ccpol$cor[2])*(1- ccpol$cor[3])*(1- ccpol$cor[4])*(1- ccpol$cor[5])*(1- ccpol$cor[6])*(1- ccpol$cor[7])*(1- ccpol$cor[8])*(1- ccpol$cor[9]) # this is the total lambda of the model, the lambda for each canonical function is calculated during the significance test by iteratively eliminating the effects of the other functions. 
+
+
+# we’ll use comput to compute the loadings of the variables on the canonical dimensions (variates). These loadings are correlations between variables and the canonical variates.
+cc2 <- comput(as.matrix(pol), as.matrix(ind), ccpol)
+
+cc2[3:4]
+
+#mod <- cca(fruUG,plantUG)
+#goodness(mod, addprevious = TRUE, summ = TRUE)
+# vif.cca 
+#vif.cca(mod)
+
+```
+
+
+```{r cca cancor, echo= TRUE, message= FALSE, warning= TRUE}
+
+library(candisc)
+cc <- cancor(as.matrix(pol), as.matrix(ind))
+cc$cor 
+cc$xcoef
+
+#plot(cc)
+#plot(ccR)
+
+```
+
+
+# Tests for canonical variables significancy, the Wilks lambda represents the total variance not explained by the full canonical model. So, 1- lambda represents the total variance of original variables explained by the canonical function. This is a Test of Significance of the canonical correlation coefficient.
+
+Adapted the code obtained from https://stats.idre.ucla.edu/r/dae/canonical-correlation-analysis/ (UCLA Statistical Consulting Group, UCLA= University of California in Los Ángeles)
+
+The full canonical model can be tested for statistical significance by applying Bartlett’s (1947) test of significance to ƒ. Subsequent canonical functions’ tests of significance are performed hierarchically such that the influence of the prior functions’ R2 c is removed in each subsequent test. Although only the mth canonical function can be tested for statistical significance in isolation, the practical significance (i.e., variance shared between canonical variates) of individual canonical functions can be evaluated by interpreting their squared canonical correlations. These results determine which, if any, functions warrant further interpretation (Nimon 2010; pp 706). The same is done with Wilk's lambda.
+
+
+```{r WilksL test Grazed sites, echo= TRUE, message= TRUE, warning= TRUE}
+
+# Grazed lands
+
+ev <- (1 - ccpol$cor^2)
+
+n <- dim(pol)[1]
+p <- length(pol)
+q <- length(ind)
+k <- min(p, q)
+m <- n - 3/2 - (p + q)/2
+
+w <- rev(cumprod(rev(ev)))
+
+# initialize
+d1 <- d2 <- f <- vector("numeric", k)
+
+for (i in 1:k) {
+    s <- sqrt((p^2 * q^2 - 4)/(p^2 + q^2 - 5))
+    si <- 1/s
+    d1[i] <- p * q
+    d2[i] <- m * s - p * q/2 + 1
+    r <- (1 - w[i]^si)/w[i]^si
+    f[i] <- r * d2[i]/d1[i]
+    p <- p - 1
+    q <- q - 1
+}
+
+pv <- pf(f, d1, d2, lower.tail = F, log.p=F)
+(dmat <- cbind(WilksL = w, F = f, df1 = d1, df2 = d2, p = pv))
+
+
+# tests of canonical dimensions
+rho <- ccpol$cor
+## Define number of observations, number of variables in first set, and number of variables in the second set.
+n <- dim(pol)[1]
+p <- length(pol)
+q <- length(ind)
+
+## Calculate p-values using the F-approximations of different test statistics:
+p.asym(rho, n, p, q, tstat = "Wilks")
+
+
+```
+
+
+# Standardized canonical coefficients diagonal matrix of sd's
+
+Standardized coefficients represents the weight of the measured variables in producing canonical variables scores.
+
+```{r standardized Grazed sites, echo= TRUE, message= TRUE, warning= TRUE}
+
+s1 <- diag(sqrt(diag(cov(pol))))
+xcoef.s <- s1 %*% ccpol$xcoef
+
+# standardized plant canonical coefficients diagonal matrix of plant sd's
+
+s2 <- diag(sqrt(diag(cov(ind))))
+ycoef.s <- s2 %*% ccpol$ycoef
+
+```
+
+
+# Main results
+
+I constructed a dataframe with the stadardized coefficients for each variable (this way we can compare between variables)
+"ccpol$cor[1]" is the canonical correlation coeeficient (R) of the first canonical function
+"ccpol$cor[1]^2" is the squared canonical correlation for the first canonical function and indicates the proportion of the total variance explained by the first canonical function. 
+
+```{r results, echo= TRUE, message= TRUE, warning= TRUE, fig.width=11}
+
+plt.cc (ccpol, d1 = 1, d2= 2, int = 1, type = "v", ind.names = NULL,
+var.label = TRUE, Xnames = NULL, Ynames = NULL)
+
+df <- data.frame(matrix(ncol = 2, nrow = 20))
+x <- c("variable", "can.var.1")
+colnames(df) <- x
+
+df$variable <- c(ccpol$names$Xnames, ccpol$names$Ynames)
+df$can.var.1 <- c(xcoef.s[,1], ycoef.s[,1])
+r.can1 <- ccpol$cor[1]
+r2.can1 <- (ccpol$cor[1])^2
+
+
+clip <- pipe("pbcopy", "w")                       
+write.table(df, file=clip, sep = '\t', row.names = FALSE)                               
+close(clip)
+
+
+```

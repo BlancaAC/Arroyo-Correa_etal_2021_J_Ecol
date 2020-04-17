@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1587117177569.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "2558401913",
+    "id" : "DE767E7",
+    "lastKnownWriteTime" : 1587118014,
+    "last_content_update" : 1587118014767,
+    "path" : "~/Desktop/MS_Arroyo-Correa_2020/Analysis/ERGM.Rmd",
+    "project_path" : "ERGM.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console",
+        "cursorPosition" : "159,14",
+        "scrollLine" : "121"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

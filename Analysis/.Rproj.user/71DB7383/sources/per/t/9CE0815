@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1587117041907.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1094939889",
+    "id" : "9CE0815",
+    "lastKnownWriteTime" : 1587117141,
+    "last_content_update" : 1587117141251,
+    "path" : "~/Desktop/MS_Arroyo-Correa_2020/Analysis/CCA.Rmd",
+    "project_path" : "CCA.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console",
+        "cursorPosition" : "240,0",
+        "scrollLine" : "218"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

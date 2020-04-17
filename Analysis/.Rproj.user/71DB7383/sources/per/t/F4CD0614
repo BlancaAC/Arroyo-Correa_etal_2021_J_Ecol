@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1587118551775.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1040835507",
+    "id" : "F4CD0614",
+    "lastKnownWriteTime" : 1587118631,
+    "last_content_update" : 1587118631090,
+    "path" : "~/Desktop/MS_Arroyo-Correa_2020/Analysis/Spatial-structure.Rmd",
+    "project_path" : "Spatial-structure.Rmd",
+    "properties" : {
+        "chunk_output_type" : "console",
+        "cursorPosition" : "190,0",
+        "scrollLine" : "168"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 7,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}
