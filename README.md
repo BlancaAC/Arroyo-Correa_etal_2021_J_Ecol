@@ -1,7 +1,7 @@
 # Individual-based plant-pollinator networks are structured by phenotypic and microsite plant traits
 
 
-##Abstract
+## Abstract
 
 1. The biotic and abiotic context of individual plants within animal-pollinated plant populations can influence pollinator foraging behavior. Pollinator movements regulate pollen flow among plant individuals, and ultimately determine individual plant reproductive success. Yet the underlying drivers of this context-dependency of interactions at the population level and their functional consequences for individuals remain poorly known.
 2. Here we used a well-characterised population of Halimium halimifolium (Cistaceae), a Mediterranean shrub species, in combination with exponential random graph models (ERGMs) to evaluate how the intrapopulation variation in plant attributes configures individual-based plant-pollinator networks and determines their reproductive outcomes. Specifically, we assessed (i) how the intrinsic (i.e., phenotype and phenology) and extrinsic (i.e., microsite) plant attributes influenced the emerging configuration of the bipartite plant-pollinator network and the unipartite plant-plant network derived from pollinator sharing, and (ii) how these plant attributes combined with the network topological position of individual plants affect their female fitness, measured as the total seed weight per plant.
